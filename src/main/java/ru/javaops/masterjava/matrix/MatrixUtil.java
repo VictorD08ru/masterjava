@@ -1,9 +1,9 @@
 package ru.javaops.masterjava.matrix;
 
+import java.util.List;
 import java.util.Random;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
@@ -11,41 +11,43 @@ import java.util.stream.IntStream;
  * 03.07.2016
  */
 public class MatrixUtil {
-    private static final ExecutorService pool = Executors.newFixedThreadPool(10);
 
     public static int[][] concurrentMultiply(int[][] matrixA, int[][] matrixB, ExecutorService executor) throws InterruptedException, ExecutionException {
         final int matrixSize = matrixA.length;
         final int[][] matrixC = new int[matrixSize][matrixSize];
+        final List<Callable<Void>> list = IntStream.range(0, matrixSize)
+                .parallel()
+                .mapToObj(i -> new Callable<Void>() {
+                    private final int[] columnB = IntStream.range(0, matrixSize).map(j -> matrixB[j][i]).toArray();
 
-        for (int i = 0; i < matrixSize; i++) {
-            for (int j = 0; j < matrixSize; j++) {
-                int finalI = i;
-                int finalJ = j;
-                matrixC[i][j] = pool.submit(() -> {
-                    int[] arrayB = IntStream.range(0, matrixSize).map(k -> matrixB[k][finalI]).toArray();
-                    return IntStream.range(0, matrixSize).map(k -> matrixA[finalJ][k] * arrayB[k]).sum();
-                }).get();
-            }
-        }
+                    @Override
+                    public Void call() throws Exception {
+                        for (int j = 0; j < matrixSize; j++) {
+                            int[] rowA = matrixA[j];
+                            matrixC[j][i] = IntStream.range(0, matrixSize).map(k -> rowA[k]*columnB[k]).sum();
+                        }
+                        return null;
+                    }
+                }).collect(Collectors.toList());
+
+        executor.invokeAll(list);
+
         return matrixC;
     }
 
     public static int[][] singleThreadMultiply(int[][] matrixA, int[][] matrixB) {
         final int matrixSize = matrixA.length;
         final int[][] matrixC = new int[matrixSize][matrixSize];
-        int[] arrayB = new int[matrixSize];
+        int[] columnB = new int[matrixSize];
 
         for (int i = 0; i < matrixSize; i++) {
             for (int j = 0; j < matrixSize; j++) {
-                arrayB[j] = matrixB[j][i];
+                columnB[j] = matrixB[j][i];
             }
 
             for (int j = 0; j < matrixSize; j++) {
-                int sum = 0;
-                for (int k = 0; k < matrixSize; k++) {
-                    sum += matrixA[j][k] * arrayB[k];
-                }
-                matrixC[i][j] = sum;
+                int[] rowA = matrixA[j];
+                matrixC[j][i] = IntStream.range(0,matrixSize).map(k -> rowA[k] * columnB[k]).sum();
             }
         }
         return matrixC;
